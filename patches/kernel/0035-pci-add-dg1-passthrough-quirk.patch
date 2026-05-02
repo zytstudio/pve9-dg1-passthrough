@@ -15,10 +15,10 @@ diff --git a/drivers/pci/quirks.c b/drivers/pci/quirks.c
 index 21e1acd3cffe..6f7644b2cb58 100644
 --- a/drivers/pci/quirks.c
 +++ b/drivers/pci/quirks.c
-@@ -6372,3 +6372,17 @@ static void quirk_no_rrs_sv(struct pci_dev *dev)
- 	}
- }
- DECLARE_PCI_FIXUP_EARLY(PCI_VENDOR_ID_INTEL, 0x0a54, quirk_no_rrs_sv);
+@@ -6497,3 +6497,17 @@ static void pci_mask_replay_timer_timeout(struct pci_dev *pdev)
+ DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_GLI, 0x9750, pci_mask_replay_timer_timeout);
+ DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_GLI, 0x9755, pci_mask_replay_timer_timeout);
+ #endif
 +
 +/* Work around reset issues on DG1 passthrough devices. */
 +static void quirk_intel_dg1_pve_fix(struct pci_dev *dev)
