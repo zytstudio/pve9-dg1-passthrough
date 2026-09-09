@@ -3,8 +3,8 @@ name: Build DG1 PVE kernel
 on:
   workflow_dispatch:
     inputs:
-      pve_tag:
-        description: "pve-kernel tag to build"
+      pve_version:
+        description: "PVE kernel package version, for example 7.0.14-16-pve"
         required: true
         default: "7.0.0-3-pve"
         type: string
@@ -13,15 +13,15 @@ permissions:
   contents: write
 
 concurrency:
-  group: dg1-kernel-${{ inputs.pve_tag }}
+  group: dg1-kernel-${{ inputs.pve_version }}
   cancel-in-progress: false
 
 jobs:
   build:
     runs-on: ubuntu-24.04
     env:
-      PVE_TAG: ${{ inputs.pve_tag }}
-      RELEASE_TAG: pve-${{ inputs.pve_tag }}-dg1
+      PVE_VERSION: ${{ inputs.pve_version }}
+      RELEASE_TAG: pve-${{ inputs.pve_version }}-dg1
 
     steps:
       - name: Check out patch repository
@@ -34,7 +34,7 @@ jobs:
           set -o pipefail
           docker pull debian:trixie
           docker run --rm \
-            --env PVE_TAG="$PVE_TAG" \
+            --env PVE_VERSION="$PVE_VERSION" \
             --env BUILD_COMMIT="$GITHUB_SHA" \
             --env PATCH_REPOSITORY="$GITHUB_REPOSITORY" \
             --volume "$GITHUB_WORKSPACE:/workspace" \
@@ -64,19 +64,34 @@ jobs:
                 xz-utils
 
               rm -rf /tmp/pve-kernel
-              git clone --branch "$PVE_TAG" --depth 1 --recurse-submodules \
-                https://github.com/proxmox/pve-kernel.git /tmp/pve-kernel
+              git clone https://github.com/proxmox/pve-kernel.git /tmp/pve-kernel
+
+              cd /tmp/pve-kernel || exit 1
+              case "$PVE_VERSION" in
+                *-pve) changelog_version="${PVE_VERSION%-pve}" ;;
+                *)
+                  echo "PVE version must end with -pve: $PVE_VERSION" >&2
+                  exit 1
+                  ;;
+              esac
+
+              # Package versions are changelog entries, not pve-kernel refs.
+              # Locate the commit that introduced the requested version.
+              source_commit=$(git log --all --format=%H -S "(${changelog_version})" -- debian/changelog | head -n 1)
+              test -n "$source_commit"
+              git checkout --detach "$source_commit"
+              git submodule update --init --recursive
+              grep -qE "^(pve-kernel|proxmox-kernel)-[^ ]+ \\(${changelog_version}\\)" debian/changelog
 
               mkdir -p /tmp/pve-kernel/patches/kernel /workspace/dist
               cp /workspace/patches/kernel/0035-pci-add-dg1-passthrough-quirk.patch \
                 /tmp/pve-kernel/patches/kernel/9999-pci-add-dg1-passthrough-quirk.patch
 
-              cd /tmp/pve-kernel || exit 1
               sed -i -E "s/^[[:space:]]*KREL_EXTRA[[:space:]]*=.*/KREL_EXTRA=-dg1/" Makefile
               grep -q "KREL_EXTRA=-dg1" Makefile
 
               # Add a deterministic local package revision without changing
-              # the upstream source version selected by the PVE tag.
+              # the upstream source version selected by the package version.
               first_line=$(head -n 1 debian/changelog)
               dch --distribution trixie --urgency medium \
                 --local +dg1 \
@@ -108,7 +123,7 @@ jobs:
 
               sha256sum /workspace/dist/*.deb > /workspace/dist/SHA256SUMS
               {
-                echo "PVE tag: $PVE_TAG"
+                echo "PVE package version: $PVE_VERSION"
                 echo "PVE commit: $(git rev-parse HEAD)"
                 echo "Patch repository: $PATCH_REPOSITORY"
                 echo "Patch commit: $BUILD_COMMIT"
