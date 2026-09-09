@@ -33,13 +33,14 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p "$GITHUB_WORKSPACE/dist"
+          chmod 0777 "$GITHUB_WORKSPACE/dist"
           docker pull debian:trixie
           docker run --rm \
             --env PVE_VERSION="$PVE_VERSION" \
             --env BUILD_COMMIT="$GITHUB_SHA" \
             --env PATCH_REPOSITORY="$GITHUB_REPOSITORY" \
-            --volume "$GITHUB_WORKSPACE:/workspace:ro" \
-            --volume "$GITHUB_WORKSPACE/dist:/output" \
+            --mount "type=bind,source=$GITHUB_WORKSPACE,target=/workspace,readonly" \
+            --mount "type=bind,source=$GITHUB_WORKSPACE/dist,target=/output" \
             --workdir /workspace \
             debian:trixie \
             bash -euxo pipefail -c '
@@ -90,7 +91,8 @@ jobs:
               git submodule sync --recursive
               git submodule update --init --recursive
 
-              mkdir -p /tmp/pve-kernel/patches/kernel /output
+              mkdir -p /tmp/pve-kernel/patches/kernel
+              test -d /output
               cp /workspace/patches/kernel/0035-pci-add-dg1-passthrough-quirk.patch \
                 /tmp/pve-kernel/patches/kernel/9999-pci-add-dg1-passthrough-quirk.patch
 
