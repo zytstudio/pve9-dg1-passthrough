@@ -14,6 +14,7 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     env:
+      BUILD_CONTAINER: dg1-kernel-${{ github.run_id }}-${{ github.run_attempt }}
       RELEASE_TAG: pve-latest-${{ github.sha }}-dg1
 
     steps:
@@ -28,13 +29,16 @@ jobs:
           mkdir -p "$GITHUB_WORKSPACE/dist"
           chmod 0777 "$GITHUB_WORKSPACE/dist"
           docker pull debian:trixie
-          docker run --rm \
+          docker create --name "$BUILD_CONTAINER" debian:trixie sleep infinity
+          docker start "$BUILD_CONTAINER"
+          docker cp \
+            "$GITHUB_WORKSPACE/patches/kernel/0035-pci-add-dg1-passthrough-quirk.patch" \
+            "$BUILD_CONTAINER:/tmp/dg1-passthrough-quirk.patch"
+          docker exec \
             --env BUILD_COMMIT="$GITHUB_SHA" \
             --env PATCH_REPOSITORY="$GITHUB_REPOSITORY" \
-            --mount "type=bind,source=$GITHUB_WORKSPACE,target=/workspace,readonly" \
-            --mount "type=bind,source=$GITHUB_WORKSPACE/dist,target=/output" \
-            --workdir /workspace \
-            debian:trixie \
+            --workdir /tmp \
+            "$BUILD_CONTAINER" \
             bash -Eeuxo pipefail -c '
               export DEBIAN_FRONTEND=noninteractive
 
@@ -77,9 +81,9 @@ jobs:
               # Use Proxmox's public Git service for the historical GitHub
               # mirror without writing any Git config files.
               echo "Filesystem status before submodule initialization:"
-              df -h /tmp /workspace /output
-              df -i /tmp /workspace /output
-              du -sh /tmp/pve-kernel /workspace /output 2>/dev/null || true
+              df -h /tmp
+              df -i /tmp
+              du -sh /tmp/pve-kernel 2>/dev/null || true
               echo "Starting kernel source submodule initialization"
               set +e
               git -c "url.https://git.proxmox.com/git/.insteadOf=https://github.com/proxmox/" \
@@ -91,8 +95,8 @@ jobs:
               echo "Kernel source submodules initialized"
 
               mkdir -p /tmp/pve-kernel/patches/kernel
-              test -d /output
-              cp /workspace/patches/kernel/0035-pci-add-dg1-passthrough-quirk.patch \
+              mkdir -p /tmp/output
+              cp /tmp/dg1-passthrough-quirk.patch \
                 /tmp/pve-kernel/patches/kernel/9999-pci-add-dg1-passthrough-quirk.patch
 
               sed -i -E "s/^[[:space:]]*KREL_EXTRA[[:space:]]*=.*/KREL_EXTRA=-dg1/" Makefile
@@ -119,18 +123,18 @@ jobs:
               grep -q "quirk_intel_dg1_pve_fix" "$patched_source"
               grep -q "PCI_DEV_FLAGS_NO_FLR_RESET" "$patched_source"
 
-              find . -type f -name "*.deb" -size +0c -exec cp -v {} /output/ \
+              find . -type f -name "*.deb" -size +0c -exec cp -v {} /tmp/output/ \
                 \;
-              test -n "$(find /output -maxdepth 1 -type f -name "*.deb" -print -quit)"
-              find /output -maxdepth 1 -type f -name "*.deb" -print0 \
+              test -n "$(find /tmp/output -maxdepth 1 -type f -name "*.deb" -print -quit)"
+              find /tmp/output -maxdepth 1 -type f -name "*.deb" -print0 \
                 | xargs -0 -n1 dpkg-deb --info >/dev/null
 
-              if ! find /output -maxdepth 1 -type f -name "*kernel*.deb" -print -quit | grep -q .; then
+              if ! find /tmp/output -maxdepth 1 -type f -name "*kernel*.deb" -print -quit | grep -q .; then
                 echo "No kernel package was produced" >&2
                 exit 1
               fi
 
-              sha256sum /output/*.deb > /output/SHA256SUMS
+              sha256sum /tmp/output/*.deb > /tmp/output/SHA256SUMS
               {
                 echo "PVE package version: $(dpkg-parsechangelog -S Version)"
                 echo "PVE commit: $source_commit"
@@ -138,8 +142,9 @@ jobs:
                 echo "Patch commit: $BUILD_COMMIT"
                 echo "Architecture: amd64"
                 echo "Builder image: debian:trixie"
-              } > /output/build-info.txt
+              } > /tmp/output/build-info.txt
             ' 2>&1 | tee build.log
+          docker cp "$BUILD_CONTAINER:/tmp/output/." "$GITHUB_WORKSPACE/dist/"
 
       - name: Upload build log on failure
         if: ${{ failure() }}
@@ -148,6 +153,10 @@ jobs:
           name: dg1-kernel-build-log
           path: build.log
           if-no-files-found: ignore
+
+      - name: Remove build container
+        if: always()
+        run: docker rm --force "$BUILD_CONTAINER" || true
 
       - name: Verify release contents
         run: |
