@@ -1,0 +1,162 @@
+name: Build DG1 PVE kernel
+
+on:
+  workflow_dispatch:
+    inputs:
+      pve_tag:
+        description: "pve-kernel tag to build"
+        required: true
+        default: "7.0.0-3-pve"
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: dg1-kernel-${{ inputs.pve_tag }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    env:
+      PVE_TAG: ${{ inputs.pve_tag }}
+      RELEASE_TAG: pve-${{ inputs.pve_tag }}-dg1
+
+    steps:
+      - name: Check out patch repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build packages in Debian Trixie
+        run: |
+          set -o pipefail
+          docker pull debian:trixie
+          docker run --rm \
+            --env PVE_TAG="$PVE_TAG" \
+            --env BUILD_COMMIT="$GITHUB_SHA" \
+            --env PATCH_REPOSITORY="$GITHUB_REPOSITORY" \
+            --volume "$GITHUB_WORKSPACE:/workspace" \
+            --workdir /workspace \
+            debian:trixie \
+            bash -euxo pipefail -c '
+              export DEBIAN_FRONTEND=noninteractive
+
+              apt-get update
+              apt-get install -y --no-install-recommends \
+                bc \
+                bison \
+                build-essential \
+                ca-certificates \
+                cpio \
+                devscripts \
+                dwarves \
+                equivs \
+                fakeroot \
+                flex \
+                git \
+                gnupg \
+                libelf-dev \
+                libssl-dev \
+                rsync \
+                wget \
+                xz-utils
+
+              rm -rf /tmp/pve-kernel
+              git clone --branch "$PVE_TAG" --depth 1 --recurse-submodules \
+                https://github.com/proxmox/pve-kernel.git /tmp/pve-kernel
+
+              mkdir -p /tmp/pve-kernel/patches/kernel /workspace/dist
+              cp /workspace/patches/kernel/0035-pci-add-dg1-passthrough-quirk.patch \
+                /tmp/pve-kernel/patches/kernel/9999-pci-add-dg1-passthrough-quirk.patch
+
+              cd /tmp/pve-kernel || exit 1
+              sed -i -E "s/^[[:space:]]*KREL_EXTRA[[:space:]]*=.*/KREL_EXTRA=-dg1/" Makefile
+              grep -q "KREL_EXTRA=-dg1" Makefile
+
+              # Add a deterministic local package revision without changing
+              # the upstream source version selected by the PVE tag.
+              first_line=$(head -n 1 debian/changelog)
+              dch --distribution trixie --urgency medium \
+                --local +dg1 \
+                "Add Intel DG1 passthrough quirk"
+              test "$(head -n 1 debian/changelog)" != "$first_line"
+
+              make build-dir-fresh
+              build_dir=$(find . -maxdepth 1 -type d -name "proxmox-kernel-*" -print -quit)
+              test -n "$build_dir"
+
+              mk-build-deps -ir -t "apt-get -y" "$build_dir/debian/control"
+              make deb
+
+              patched_source="$build_dir/ubuntu-kernel/drivers/pci/quirks.c"
+              test -f "$patched_source"
+              grep -q "quirk_intel_dg1_pve_fix" "$patched_source"
+              grep -q "PCI_DEV_FLAGS_NO_FLR_RESET" "$patched_source"
+
+              find . -type f -name "*.deb" -size +0c -exec cp -v {} /workspace/dist/ \
+                \;
+              test -n "$(find /workspace/dist -maxdepth 1 -type f -name "*.deb" -print -quit)"
+              find /workspace/dist -maxdepth 1 -type f -name "*.deb" -print0 \
+                | xargs -0 -n1 dpkg-deb --info >/dev/null
+
+              if ! find /workspace/dist -maxdepth 1 -type f -name "*kernel*.deb" -print -quit | grep -q .; then
+                echo "No kernel package was produced" >&2
+                exit 1
+              fi
+
+              sha256sum /workspace/dist/*.deb > /workspace/dist/SHA256SUMS
+              {
+                echo "PVE tag: $PVE_TAG"
+                echo "PVE commit: $(git rev-parse HEAD)"
+                echo "Patch repository: $PATCH_REPOSITORY"
+                echo "Patch commit: $BUILD_COMMIT"
+                echo "Architecture: amd64"
+                echo "Builder image: debian:trixie"
+              } > /workspace/dist/build-info.txt
+            ' 2>&1 | tee build.log
+
+      - name: Upload build log on failure
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: dg1-kernel-build-log
+          path: build.log
+          if-no-files-found: ignore
+
+      - name: Verify release contents
+        run: |
+          test -s dist/SHA256SUMS
+          test -s dist/build-info.txt
+          sha256sum --check dist/SHA256SUMS
+          test -n "$(find dist -maxdepth 1 -type f -name '*.deb' -print -quit)"
+
+      - name: Fail if release already exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Release already exists: $RELEASE_TAG" >&2
+            exit 1
+          fi
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > release-notes.md <<EOF
+          DG1 passthrough kernel packages for the selected PVE kernel.
+
+          - Architecture: amd64
+          - Kernel package revision: dg1
+          - The packages include the Intel DG1 PCI reset/config-space workaround.
+          - Verify downloads with: sha256sum -c SHA256SUMS
+
+          These packages are intended for testing and should be installed only
+          after confirming compatibility with the target Proxmox VE node.
+          EOF
+          gh release create "$RELEASE_TAG" dist/* \
+            --title "$RELEASE_TAG" \
+            --notes-file release-notes.md \
+            --target "$GITHUB_SHA"

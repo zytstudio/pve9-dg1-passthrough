@@ -27,3 +27,31 @@ Fork自[YK-Samgo/pve9-dg1-passthrough](https://github.com/YK-Samgo/pve9-dg1-pass
 1. 编辑debian/changelog，添加发布信息
 
 2. 编辑`pve-kernel/Makefile:13 KREL_EXTRA=-dg1`
+
+## GitHub Actions 自动编译
+
+仓库提供了基于 Docker Debian Trixie 环境的 GitHub Actions 流水线，适用于 PVE 9
+对应的 7.x 内核。进入仓库的
+`Actions`，选择 `Build DG1 PVE kernel`，点击 `Run workflow`，然后输入要编译的
+`pve-kernel` tag，例如：
+
+```text
+7.0.0-3-pve
+```
+
+工作流会检出 Proxmox `pve-kernel` 的同名 tag，应用本仓库补丁，并编译 amd64 的
+内核、headers 和 modules Debian 包。成功后会创建类似下面的 GitHub Release：
+
+```text
+pve-7.0.0-3-pve-dg1
+```
+
+Release 中包含所有生成的 `.deb`、`SHA256SUMS` 和 `build-info.txt`。安装前可以使用：
+
+```bash
+sha256sum -c SHA256SUMS
+```
+
+工作流要求输入的 tag 必须存在于
+[Proxmox pve-kernel 仓库](https://github.com/proxmox/pve-kernel) 中。构建失败时不会创建
+Release；已经存在同名 Release 时，工作流也会拒绝覆盖。
