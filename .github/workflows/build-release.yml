@@ -82,7 +82,8 @@ jobs:
               # Locate the commit that introduced the requested version.
               source_commit=$(git log --all --format=%H -S "(${changelog_version})" -- debian/changelog | head -n 1)
               test -n "$source_commit"
-              git checkout --detach "$source_commit"
+              git reset --hard "$source_commit"
+              test "$(git rev-parse HEAD)" = "$source_commit"
               # The historical submodule URL points at a GitHub mirror that
               # is not anonymously cloneable in GitHub Actions. Use Proxmox's
               # public Git service for all proxmox GitHub mirrors instead.
