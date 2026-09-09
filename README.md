@@ -31,20 +31,15 @@ Fork自[YK-Samgo/pve9-dg1-passthrough](https://github.com/YK-Samgo/pve9-dg1-pass
 ## GitHub Actions 自动编译
 
 仓库提供了基于 Docker Debian Trixie 环境的 GitHub Actions 流水线，适用于 PVE 9
-对应的 7.x 内核。进入仓库的
-`Actions`，选择 `Build DG1 PVE kernel`，点击 `Run workflow`，然后输入要编译的
-PVE 内核包版本，例如：
+对应的 7.x 内核。进入仓库的 `Actions`，选择 `Build DG1 PVE kernel`，点击
+`Run workflow` 即可。
+
+工作流会直接检出 Proxmox `pve-kernel` 默认分支的最新 commit 及其子模块，应用本仓库
+补丁，并编译 amd64 的内核、headers 和 modules Debian 包。成功后会创建类似下面的
+GitHub Release：
 
 ```text
-7.0.14-16-pve
-```
-
-工作流会在 Proxmox `pve-kernel` 的提交历史中定位对应的 changelog 版本，检出匹配的
-源码和子模块，应用本仓库补丁，并编译 amd64 的内核、headers 和 modules Debian 包。
-成功后会创建类似下面的 GitHub Release：
-
-```text
-pve-7.0.14-16-pve-dg1
+pve-latest-<commit>-dg1
 ```
 
 Release 中包含所有生成的 `.deb`、`SHA256SUMS` 和 `build-info.txt`。安装前可以使用：
@@ -53,5 +48,5 @@ Release 中包含所有生成的 `.deb`、`SHA256SUMS` 和 `build-info.txt`。�
 sha256sum -c SHA256SUMS
 ```
 
-输入版本应使用 PVE 节点显示的完整版本号，例如 `7.0.14-16-pve`。构建失败时不会创建
-Release；已经存在同名 Release 时，工作流也会拒绝覆盖。
+Release 中的构建信息会记录实际使用的上游 commit。构建失败时不会创建 Release；已经
+存在同名 Release 时，工作流也会拒绝覆盖。

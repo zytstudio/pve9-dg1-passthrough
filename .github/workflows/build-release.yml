@@ -2,26 +2,19 @@ name: Build DG1 PVE kernel
 
 on:
   workflow_dispatch:
-    inputs:
-      pve_version:
-        description: "PVE kernel package version, for example 7.0.14-16-pve"
-        required: true
-        default: "7.0.0-3-pve"
-        type: string
 
 permissions:
   contents: write
 
 concurrency:
-  group: dg1-kernel-${{ inputs.pve_version }}
+  group: dg1-kernel-latest-${{ github.sha }}
   cancel-in-progress: false
 
 jobs:
   build:
     runs-on: ubuntu-24.04
     env:
-      PVE_VERSION: ${{ inputs.pve_version }}
-      RELEASE_TAG: pve-${{ inputs.pve_version }}-dg1
+      RELEASE_TAG: pve-latest-${{ github.sha }}-dg1
 
     steps:
       - name: Check out patch repository
@@ -36,7 +29,6 @@ jobs:
           chmod 0777 "$GITHUB_WORKSPACE/dist"
           docker pull debian:trixie
           docker run --rm \
-            --env PVE_VERSION="$PVE_VERSION" \
             --env BUILD_COMMIT="$GITHUB_SHA" \
             --env PATCH_REPOSITORY="$GITHUB_REPOSITORY" \
             --mount "type=bind,source=$GITHUB_WORKSPACE,target=/workspace,readonly" \
@@ -67,26 +59,14 @@ jobs:
                 xz-utils
 
               rm -rf /tmp/pve-kernel
-              git clone https://github.com/proxmox/pve-kernel.git /tmp/pve-kernel
+              git clone --depth 1 --no-recurse-submodules \
+                https://github.com/proxmox/pve-kernel.git /tmp/pve-kernel
 
               cd /tmp/pve-kernel || exit 1
-              case "$PVE_VERSION" in
-                *-pve) changelog_version="${PVE_VERSION%-pve}" ;;
-                *)
-                  echo "PVE version must end with -pve: $PVE_VERSION" >&2
-                  exit 1
-                  ;;
-              esac
-
-              # Package versions are changelog entries, not pve-kernel refs.
-              # Locate the commit that introduced the requested version.
-              source_commit=$(git log --all --format=%H -S "(${changelog_version})" -- debian/changelog | head -n 1)
-              test -n "$source_commit"
-              git checkout --detach "$source_commit"
               # The historical submodule URL points at a GitHub mirror that
               # is not anonymously cloneable in GitHub Actions. Use Proxmox's
               # public Git service for all proxmox GitHub mirrors instead.
-              git config --global url."https://git.proxmox.com/git/".insteadOf \
+              git config --local url."https://git.proxmox.com/git/".insteadOf \
                 "https://github.com/proxmox/"
               git submodule sync --recursive
               git submodule update --init --recursive
@@ -99,8 +79,9 @@ jobs:
               sed -i -E "s/^[[:space:]]*KREL_EXTRA[[:space:]]*=.*/KREL_EXTRA=-dg1/" Makefile
               grep -q "KREL_EXTRA=-dg1" Makefile
 
-              # Add a deterministic local package revision without changing
-              # the upstream source version selected by the package version.
+              source_commit=$(git rev-parse HEAD)
+              # Add a local package revision to distinguish this build from
+              # the unmodified package produced by Proxmox.
               first_line=$(head -n 1 debian/changelog)
               dch --distribution trixie --urgency medium \
                 --local +dg1 \
@@ -132,8 +113,8 @@ jobs:
 
               sha256sum /output/*.deb > /output/SHA256SUMS
               {
-                echo "PVE package version: $PVE_VERSION"
-                echo "PVE commit: $(git rev-parse HEAD)"
+                echo "PVE package version: $(dpkg-parsechangelog -S Version)"
+                echo "PVE commit: $source_commit"
                 echo "Patch repository: $PATCH_REPOSITORY"
                 echo "Patch commit: $BUILD_COMMIT"
                 echo "Architecture: amd64"
