@@ -87,14 +87,10 @@ jobs:
               # The historical submodule URL points at a GitHub mirror that
               # is not anonymously cloneable in GitHub Actions. Use Proxmox's
               # public Git service for all proxmox GitHub mirrors instead.
-              echo "Configuring Proxmox submodule URL rewrite"
-              git config --local url."https://git.proxmox.com/git/".insteadOf \
+              git config --global url."https://git.proxmox.com/git/".insteadOf \
                 "https://github.com/proxmox/"
-              echo "Synchronizing submodule URLs"
               git submodule sync --recursive
-              echo "Initializing kernel source submodules"
               git submodule update --init --recursive
-              echo "Submodules initialized"
 
               mkdir -p /tmp/pve-kernel/patches/kernel
               test -d /output
