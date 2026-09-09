@@ -42,6 +42,8 @@ jobs:
             "$BUILD_CONTAINER" \
             bash -Eeuxo pipefail 2>&1 <<'CONTAINER_SCRIPT' | tee build.log
               export DEBIAN_FRONTEND=noninteractive
+              export DEBFULLNAME="GitHub Actions"
+              export DEBEMAIL="ci@localhost"
 
               on_error() {
                 rc=$?
@@ -64,6 +66,7 @@ jobs:
                 flex \
                 git \
                 gnupg \
+                libdistro-info-perl \
                 libelf-dev \
                 libssl-dev \
                 rsync \
