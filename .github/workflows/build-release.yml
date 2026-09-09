@@ -76,8 +76,19 @@ jobs:
               echo "Working directory: $(pwd)"
               # Use Proxmox's public Git service for the historical GitHub
               # mirror without writing any Git config files.
+              echo "Filesystem status before submodule initialization:"
+              df -h /tmp /workspace /output
+              df -i /tmp /workspace /output
+              du -sh /tmp/pve-kernel /workspace /output 2>/dev/null || true
+              echo "Starting kernel source submodule initialization"
+              set +e
               git -c "url.https://git.proxmox.com/git/.insteadOf=https://github.com/proxmox/" \
                 submodule update --init --recursive
+              submodule_status=$?
+              set -e
+              echo "Submodule initialization exit code: $submodule_status"
+              test "$submodule_status" -eq 0
+              echo "Kernel source submodules initialized"
 
               mkdir -p /tmp/pve-kernel/patches/kernel
               test -d /output
