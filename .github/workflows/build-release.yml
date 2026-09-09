@@ -34,7 +34,7 @@ jobs:
           DG1_PATCH_B64=$(base64 --wrap=0 \
             "$GITHUB_WORKSPACE/patches/kernel/0035-pci-add-dg1-passthrough-quirk.patch")
           test -n "$DG1_PATCH_B64"
-          docker exec \
+          docker exec -i \
             --env BUILD_COMMIT="$GITHUB_SHA" \
             --env DG1_PATCH_B64="$DG1_PATCH_B64" \
             --env PATCH_REPOSITORY="$GITHUB_REPOSITORY" \
@@ -158,6 +158,7 @@ jobs:
                 echo "Builder image: debian:trixie"
               } > /tmp/output/build-info.txt
           CONTAINER_SCRIPT
+          docker exec "$BUILD_CONTAINER" test -s /tmp/output/SHA256SUMS
           docker cp "$BUILD_CONTAINER:/tmp/output/." "$GITHUB_WORKSPACE/dist/"
 
       - name: Upload build log on failure
