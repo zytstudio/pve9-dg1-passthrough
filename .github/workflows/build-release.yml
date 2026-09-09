@@ -40,7 +40,7 @@ jobs:
             --env PATCH_REPOSITORY="$GITHUB_REPOSITORY" \
             --workdir /tmp \
             "$BUILD_CONTAINER" \
-            bash -Eeuxo pipefail -c '
+            bash -Eeuxo pipefail 2>&1 <<'CONTAINER_SCRIPT' | tee build.log
               export DEBIAN_FRONTEND=noninteractive
 
               on_error() {
@@ -79,7 +79,7 @@ jobs:
               ls -ld /tmp/pve-kernel
               cd /tmp/pve-kernel || { echo "Cannot enter /tmp/pve-kernel" >&2; exit 1; }
               echo "Working directory: $(pwd)"
-              # Use Proxmox's public Git service for the historical GitHub
+              # Use the Proxmox public Git service for the historical GitHub
               # mirror without writing any Git config files.
               echo "Filesystem status before submodule initialization:"
               df -h /tmp
@@ -157,7 +157,7 @@ jobs:
                 echo "Architecture: amd64"
                 echo "Builder image: debian:trixie"
               } > /tmp/output/build-info.txt
-            ' 2>&1 | tee build.log
+          CONTAINER_SCRIPT
           docker cp "$BUILD_CONTAINER:/tmp/output/." "$GITHUB_WORKSPACE/dist/"
 
       - name: Upload build log on failure
