@@ -95,6 +95,16 @@ jobs:
               test "$submodule_status" -eq 0
               echo "Kernel source submodules initialized"
 
+              echo "pve-kernel checkout diagnostics:"
+              echo "Current directory: $(pwd)"
+              echo "Git top level: $(git rev-parse --show-toplevel)"
+              ls -la
+              find . -maxdepth 2 -type f -name Makefile -print
+              test -f Makefile || {
+                echo "pve-kernel Makefile is missing from $(pwd)" >&2
+                exit 1
+              }
+
               mkdir -p /tmp/pve-kernel/patches/kernel
               mkdir -p /tmp/output
               printf "%s" "$DG1_PATCH_B64" | base64 --decode \
