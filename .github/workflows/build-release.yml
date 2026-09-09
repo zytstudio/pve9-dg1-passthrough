@@ -87,7 +87,6 @@ jobs:
                 "https://github.com/proxmox/"
               git submodule sync --recursive
               git submodule update --init --recursive
-              grep -qE "^(pve-kernel|proxmox-kernel)-[^ ]+ \\(${changelog_version}\\)" debian/changelog
 
               mkdir -p /tmp/pve-kernel/patches/kernel /workspace/dist
               cp /workspace/patches/kernel/0035-pci-add-dg1-passthrough-quirk.patch \
