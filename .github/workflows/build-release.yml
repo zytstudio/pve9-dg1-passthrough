@@ -38,7 +38,7 @@ jobs:
             --env BUILD_COMMIT="$GITHUB_SHA" \
             --env DG1_PATCH_B64="$DG1_PATCH_B64" \
             --env PATCH_REPOSITORY="$GITHUB_REPOSITORY" \
-            --workdir /build \
+            --workdir /tmp \
             "$BUILD_CONTAINER" \
             bash -Eeuxo pipefail -c '
               export DEBIAN_FRONTEND=noninteractive
@@ -70,22 +70,21 @@ jobs:
                 wget \
                 xz-utils
 
-              mkdir -p /build
-              rm -rf /build/pve-kernel
+              rm -rf /tmp/pve-kernel
               git clone --depth 1 --no-recurse-submodules \
-                https://github.com/proxmox/pve-kernel.git /build/pve-kernel
+                https://github.com/proxmox/pve-kernel.git /tmp/pve-kernel
 
-              test -d /build/pve-kernel
+              test -d /tmp/pve-kernel
               echo "Cloned pve-kernel directory:"
-              ls -ld /build/pve-kernel
-              cd /build/pve-kernel || { echo "Cannot enter /build/pve-kernel" >&2; exit 1; }
+              ls -ld /tmp/pve-kernel
+              cd /tmp/pve-kernel || { echo "Cannot enter /tmp/pve-kernel" >&2; exit 1; }
               echo "Working directory: $(pwd)"
               # Use Proxmox's public Git service for the historical GitHub
               # mirror without writing any Git config files.
               echo "Filesystem status before submodule initialization:"
-              df -h /build
-              df -i /build
-              du -sh /build/pve-kernel 2>/dev/null || true
+              df -h /tmp
+              df -i /tmp
+              du -sh /tmp/pve-kernel 2>/dev/null || true
               echo "Starting kernel source submodule initialization"
               set +e
               git -c "url.https://git.proxmox.com/git/.insteadOf=https://github.com/proxmox/" \
@@ -96,13 +95,13 @@ jobs:
               test "$submodule_status" -eq 0
               echo "Kernel source submodules initialized"
 
-              mkdir -p /build/pve-kernel/patches/kernel
-              mkdir -p /build/output
+              mkdir -p /tmp/pve-kernel/patches/kernel
+              mkdir -p /tmp/output
               printf "%s" "$DG1_PATCH_B64" | base64 --decode \
-                > /build/dg1-passthrough-quirk.patch
-              test -s /build/dg1-passthrough-quirk.patch
-              cp /build/dg1-passthrough-quirk.patch \
-                /build/pve-kernel/patches/kernel/9999-pci-add-dg1-passthrough-quirk.patch
+                > /tmp/dg1-passthrough-quirk.patch
+              test -s /tmp/dg1-passthrough-quirk.patch
+              cp /tmp/dg1-passthrough-quirk.patch \
+                /tmp/pve-kernel/patches/kernel/9999-pci-add-dg1-passthrough-quirk.patch
 
               sed -i -E "s/^[[:space:]]*KREL_EXTRA[[:space:]]*=.*/KREL_EXTRA=-dg1/" Makefile
               grep -q "KREL_EXTRA=-dg1" Makefile
@@ -128,18 +127,18 @@ jobs:
               grep -q "quirk_intel_dg1_pve_fix" "$patched_source"
               grep -q "PCI_DEV_FLAGS_NO_FLR_RESET" "$patched_source"
 
-              find . -type f -name "*.deb" -size +0c -exec cp -v {} /build/output/ \
+              find . -type f -name "*.deb" -size +0c -exec cp -v {} /tmp/output/ \
                 \;
-              test -n "$(find /build/output -maxdepth 1 -type f -name "*.deb" -print -quit)"
-              find /build/output -maxdepth 1 -type f -name "*.deb" -print0 \
+              test -n "$(find /tmp/output -maxdepth 1 -type f -name "*.deb" -print -quit)"
+              find /tmp/output -maxdepth 1 -type f -name "*.deb" -print0 \
                 | xargs -0 -n1 dpkg-deb --info >/dev/null
 
-              if ! find /build/output -maxdepth 1 -type f -name "*kernel*.deb" -print -quit | grep -q .; then
+              if ! find /tmp/output -maxdepth 1 -type f -name "*kernel*.deb" -print -quit | grep -q .; then
                 echo "No kernel package was produced" >&2
                 exit 1
               fi
 
-              sha256sum /build/output/*.deb > /build/output/SHA256SUMS
+              sha256sum /tmp/output/*.deb > /tmp/output/SHA256SUMS
               {
                 echo "PVE package version: $(dpkg-parsechangelog -S Version)"
                 echo "PVE commit: $source_commit"
@@ -147,9 +146,9 @@ jobs:
                 echo "Patch commit: $BUILD_COMMIT"
                 echo "Architecture: amd64"
                 echo "Builder image: debian:trixie"
-              } > /build/output/build-info.txt
+              } > /tmp/output/build-info.txt
             ' 2>&1 | tee build.log
-          docker cp "$BUILD_CONTAINER:/build/output/." "$GITHUB_WORKSPACE/dist/"
+          docker cp "$BUILD_CONTAINER:/tmp/output/." "$GITHUB_WORKSPACE/dist/"
 
       - name: Upload build log on failure
         if: ${{ failure() }}
