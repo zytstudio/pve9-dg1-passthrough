@@ -32,12 +32,14 @@ jobs:
       - name: Build packages in Debian Trixie
         run: |
           set -o pipefail
+          mkdir -p "$GITHUB_WORKSPACE/dist"
           docker pull debian:trixie
           docker run --rm \
             --env PVE_VERSION="$PVE_VERSION" \
             --env BUILD_COMMIT="$GITHUB_SHA" \
             --env PATCH_REPOSITORY="$GITHUB_REPOSITORY" \
-            --volume "$GITHUB_WORKSPACE:/workspace" \
+            --volume "$GITHUB_WORKSPACE:/workspace:ro" \
+            --volume "$GITHUB_WORKSPACE/dist:/output" \
             --workdir /workspace \
             debian:trixie \
             bash -euxo pipefail -c '
@@ -88,7 +90,7 @@ jobs:
               git submodule sync --recursive
               git submodule update --init --recursive
 
-              mkdir -p /tmp/pve-kernel/patches/kernel /workspace/dist
+              mkdir -p /tmp/pve-kernel/patches/kernel /output
               cp /workspace/patches/kernel/0035-pci-add-dg1-passthrough-quirk.patch \
                 /tmp/pve-kernel/patches/kernel/9999-pci-add-dg1-passthrough-quirk.patch
 
@@ -115,18 +117,18 @@ jobs:
               grep -q "quirk_intel_dg1_pve_fix" "$patched_source"
               grep -q "PCI_DEV_FLAGS_NO_FLR_RESET" "$patched_source"
 
-              find . -type f -name "*.deb" -size +0c -exec cp -v {} /workspace/dist/ \
+              find . -type f -name "*.deb" -size +0c -exec cp -v {} /output/ \
                 \;
-              test -n "$(find /workspace/dist -maxdepth 1 -type f -name "*.deb" -print -quit)"
-              find /workspace/dist -maxdepth 1 -type f -name "*.deb" -print0 \
+              test -n "$(find /output -maxdepth 1 -type f -name "*.deb" -print -quit)"
+              find /output -maxdepth 1 -type f -name "*.deb" -print0 \
                 | xargs -0 -n1 dpkg-deb --info >/dev/null
 
-              if ! find /workspace/dist -maxdepth 1 -type f -name "*kernel*.deb" -print -quit | grep -q .; then
+              if ! find /output -maxdepth 1 -type f -name "*kernel*.deb" -print -quit | grep -q .; then
                 echo "No kernel package was produced" >&2
                 exit 1
               fi
 
-              sha256sum /workspace/dist/*.deb > /workspace/dist/SHA256SUMS
+              sha256sum /output/*.deb > /output/SHA256SUMS
               {
                 echo "PVE package version: $PVE_VERSION"
                 echo "PVE commit: $(git rev-parse HEAD)"
@@ -134,7 +136,7 @@ jobs:
                 echo "Patch commit: $BUILD_COMMIT"
                 echo "Architecture: amd64"
                 echo "Builder image: debian:trixie"
-              } > /workspace/dist/build-info.txt
+              } > /output/build-info.txt
             ' 2>&1 | tee build.log
 
       - name: Upload build log on failure
