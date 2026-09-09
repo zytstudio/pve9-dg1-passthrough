@@ -35,8 +35,15 @@ jobs:
             --mount "type=bind,source=$GITHUB_WORKSPACE/dist,target=/output" \
             --workdir /workspace \
             debian:trixie \
-            bash -euxo pipefail -c '
+            bash -Eeuxo pipefail -c '
               export DEBIAN_FRONTEND=noninteractive
+
+              on_error() {
+                rc=$?
+                echo "BUILD FAILED: ${BASH_SOURCE[1]}:${BASH_LINENO[0]}: ${BASH_COMMAND} (exit ${rc})" >&2
+                exit "$rc"
+              }
+              trap on_error ERR
 
               apt-get update
               apt-get install -y --no-install-recommends \
@@ -62,7 +69,11 @@ jobs:
               git clone --depth 1 --no-recurse-submodules \
                 https://github.com/proxmox/pve-kernel.git /tmp/pve-kernel
 
-              cd /tmp/pve-kernel || exit 1
+              test -d /tmp/pve-kernel
+              echo "Cloned pve-kernel directory:"
+              ls -ld /tmp/pve-kernel
+              cd /tmp/pve-kernel || { echo "Cannot enter /tmp/pve-kernel" >&2; exit 1; }
+              echo "Working directory: $(pwd)"
               # The historical submodule URL points at a GitHub mirror that
               # is not anonymously cloneable in GitHub Actions. Use Proxmox's
               # public Git service for all proxmox GitHub mirrors instead.
