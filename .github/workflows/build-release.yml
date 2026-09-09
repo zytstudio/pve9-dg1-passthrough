@@ -47,7 +47,10 @@ jobs:
 
               on_error() {
                 rc=$?
-                echo "BUILD FAILED: ${BASH_SOURCE[1]}:${BASH_LINENO[0]}: ${BASH_COMMAND} (exit ${rc})" >&2
+                error_file="${BASH_SOURCE[1]:-${BASH_SOURCE[0]:-unknown}}"
+                error_line="${BASH_LINENO[0]:-0}"
+                error_command="${BASH_COMMAND:-unknown}"
+                echo "BUILD FAILED: ${error_file}:${error_line}: ${error_command} (exit ${rc})" >&2
                 exit "$rc"
               }
               trap on_error ERR
@@ -60,6 +63,9 @@ jobs:
                 ca-certificates \
                 cpio \
                 devscripts \
+                dh-autoreconf \
+                dh-sequence-python3 \
+                dh-sequence-sphinxdoc \
                 dwarves \
                 equivs \
                 fakeroot \
