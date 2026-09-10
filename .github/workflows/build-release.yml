@@ -126,14 +126,6 @@ jobs:
               grep -q "KREL_EXTRA=-dg1" Makefile
 
               source_commit=$(git rev-parse HEAD)
-              # Add a local package revision to distinguish this build from
-              # the unmodified package produced by Proxmox.
-              first_line=$(head -n 1 debian/changelog)
-              dch --distribution trixie --urgency medium \
-                --local +dg1 \
-                "Add Intel DG1 passthrough quirk"
-              test "$(head -n 1 debian/changelog)" != "$first_line"
-
               make build-dir-fresh
               build_dir=$(find . -maxdepth 1 -type d -name "proxmox-kernel-*" -print -quit)
               test -n "$build_dir"
