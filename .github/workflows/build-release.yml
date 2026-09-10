@@ -181,7 +181,7 @@ jobs:
         run: |
           test -s dist/SHA256SUMS
           test -s dist/build-info.txt
-          sha256sum --check dist/SHA256SUMS
+          (cd dist && sha256sum --check SHA256SUMS)
           test -n "$(find dist -maxdepth 1 -type f -name '*.deb' -print -quit)"
 
       - name: Fail if release already exists
