@@ -149,7 +149,10 @@ jobs:
                 exit 1
               fi
 
-              sha256sum /tmp/output/*.deb > /tmp/output/SHA256SUMS
+              (
+                cd /tmp/output
+                sha256sum ./*.deb > SHA256SUMS
+              )
               {
                 echo "PVE package version: $(dpkg-parsechangelog -S Version)"
                 echo "PVE commit: $source_commit"
