@@ -2,12 +2,18 @@ name: Build DG1 PVE kernel
 
 on:
   workflow_dispatch:
+    inputs:
+      pve_version:
+        description: "PVE kernel version, for example 7.0.14-4-pve"
+        required: true
+        default: "7.0.14-4-pve"
+        type: string
 
 permissions:
   contents: write
 
 concurrency:
-  group: dg1-kernel-latest-${{ github.sha }}
+  group: dg1-kernel-${{ inputs.pve_version }}
   cancel-in-progress: false
 
 jobs:
@@ -15,7 +21,8 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       BUILD_CONTAINER: dg1-kernel-${{ github.run_id }}-${{ github.run_attempt }}
-      RELEASE_TAG: pve-latest-${{ github.sha }}-dg1
+      PVE_VERSION: ${{ inputs.pve_version }}
+      RELEASE_TAG: ${{ inputs.pve_version }}
 
     steps:
       - name: Check out patch repository
@@ -38,6 +45,7 @@ jobs:
             --env BUILD_COMMIT="$GITHUB_SHA" \
             --env DG1_PATCH_B64="$DG1_PATCH_B64" \
             --env PATCH_REPOSITORY="$GITHUB_REPOSITORY" \
+            --env PVE_VERSION="$PVE_VERSION" \
             --workdir /tmp \
             "$BUILD_CONTAINER" \
             bash -Eeuxo pipefail 2>&1 <<'CONTAINER_SCRIPT' | tee build.log
@@ -80,7 +88,7 @@ jobs:
                 xz-utils
 
               rm -rf /tmp/pve-kernel
-              git clone --depth 1 --no-recurse-submodules \
+              git clone --no-recurse-submodules \
                 https://github.com/proxmox/pve-kernel.git /tmp/pve-kernel
 
               test -d /tmp/pve-kernel
@@ -88,6 +96,19 @@ jobs:
               ls -ld /tmp/pve-kernel
               cd /tmp/pve-kernel || { echo "Cannot enter /tmp/pve-kernel" >&2; exit 1; }
               echo "Working directory: $(pwd)"
+              case "$PVE_VERSION" in
+                *-pve) changelog_version="${PVE_VERSION%-pve}" ;;
+                *)
+                  echo "PVE version must end with -pve: $PVE_VERSION" >&2
+                  exit 1
+                  ;;
+              esac
+
+              echo "Locating pve-kernel commit for $PVE_VERSION"
+              source_commit=$(git log --all --format=%H -S "(${changelog_version})" -- debian/changelog | head -n 1)
+              test -n "$source_commit"
+              git reset --hard "$source_commit"
+              test "$(git rev-parse HEAD)" = "$source_commit"
               # Use the Proxmox public Git service for the historical GitHub
               # mirror without writing any Git config files.
               echo "Filesystem status before submodule initialization:"
@@ -154,7 +175,7 @@ jobs:
                 sha256sum ./*.deb > SHA256SUMS
               )
               {
-                echo "PVE package version: $(dpkg-parsechangelog -S Version)"
+                echo "PVE package version: $PVE_VERSION"
                 echo "PVE commit: $source_commit"
                 echo "Patch repository: $PATCH_REPOSITORY"
                 echo "Patch commit: $BUILD_COMMIT"
